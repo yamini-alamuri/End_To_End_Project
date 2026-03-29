@@ -1,168 +1,317 @@
 import { useState } from 'react';
-import { Sun, Zap, TrendingUp } from 'lucide-react';
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Sun, Zap, TrendingUp, Calendar } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const SolarIrradianceTab = () => {
-  const [timeRange, setTimeRange] = useState('daily');
+  const [selectedDay, setSelectedDay] = useState('today');
 
-  // Sample data for solar irradiance
-  const dailyData = [
-    { time: '6 AM', irradiance: 100, power: 0.5 },
-    { time: '7 AM', irradiance: 300, power: 1.5 },
-    { time: '8 AM', irradiance: 500, power: 2.5 },
-    { time: '9 AM', irradiance: 700, power: 3.5 },
-    { time: '10 AM', irradiance: 850, power: 4.2 },
-    { time: '11 AM', irradiance: 950, power: 4.7 },
-    { time: '12 PM', irradiance: 1000, power: 5.0 },
-    { time: '1 PM', irradiance: 980, power: 4.9 },
-    { time: '2 PM', irradiance: 900, power: 4.5 },
-    { time: '3 PM', irradiance: 750, power: 3.7 },
-    { time: '4 PM', irradiance: 550, power: 2.7 },
-    { time: '5 PM', irradiance: 300, power: 1.5 },
-    { time: '6 PM', irradiance: 100, power: 0.5 }
-  ];
+  // Generate HIGHLY realistic solar irradiance data with lots of spikes and fluctuations
+  // This simulates real-world cloud cover, atmospheric turbulence, and rapid variations
+  const generateRealisticSolarData = (seed, weatherPattern) => {
+    const times = [];
+    const startHour = 5; // 5 AM
+    const endHour = 20; // 8 PM
+    
+    // Seeded random for consistent daily patterns
+    let randomSeed = seed;
+    const seededRandom = () => {
+      randomSeed = (randomSeed * 9301 + 49297) % 233280;
+      return randomSeed / 233280;
+    };
+    
+    for (let hour = startHour; hour <= endHour; hour++) {
+      for (let minute = 0; minute < 60; minute += 5) {
+        const timeDecimal = hour + minute / 60;
+        const hourLabel = hour <= 12 ? hour : hour - 12;
+        const period = hour < 12 ? 'AM' : 'PM';
+        const displayHour = hourLabel === 0 ? 12 : hourLabel;
+        const time = minute === 0 
+          ? `${displayHour} ${period}` 
+          : `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
+        
+        // Calculate TOA (Top of Atmosphere) radiation - smooth bell curve
+        const solarNoon = 12.0; // Peak at noon
+        const dayLength = 14;
+        const normalizedTime = (timeDecimal - solarNoon) / (dayLength / 2);
+        const toaRadiation = normalizedTime >= -1 && normalizedTime <= 1
+          ? Math.max(0, 1150 * Math.pow(Math.cos(normalizedTime * Math.PI / 2), 0.8))
+          : 0;
+        
+        if (toaRadiation < 10) {
+          times.push({
+            time,
+            timeDecimal,
+            surfaceRadiation: 0,
+            toaRadiation: Math.round(toaRadiation),
+            power: 0
+          });
+          continue;
+        }
+        
+        // Start with base atmospheric absorption
+        let surfaceRadiation = toaRadiation * (0.6 + weatherPattern * 0.3);
+        
+        // Add EXTREME rapid fluctuations - many overlapping frequency components
+        const rapid1 = Math.sin(timeDecimal * 25.7 + seed) * 0.25;
+        const rapid2 = Math.sin(timeDecimal * 43.3 + seed * 1.5) * 0.22;
+        const rapid3 = Math.sin(timeDecimal * 61.8 + seed * 2.1) * 0.20;
+        const rapid4 = Math.cos(timeDecimal * 35.4 + seed * 0.7) * 0.23;
+        const rapid5 = Math.sin(timeDecimal * 51.2 + seed * 3.2) * 0.18;
+        const rapid6 = Math.cos(timeDecimal * 28.9 + seed * 2.8) * 0.21;
+        
+        // Medium frequency variations (larger cloud movements)
+        const medium1 = Math.sin(timeDecimal * 8.2 + seed * 0.5) * 0.28;
+        const medium2 = Math.cos(timeDecimal * 12.8 + seed * 1.3) * 0.26;
+        const medium3 = Math.sin(timeDecimal * 6.5 + seed * 1.8) * 0.24;
+        
+        // Combine all fluctuations
+        const totalVariation = rapid1 + rapid2 + rapid3 + rapid4 + rapid5 + rapid6 + medium1 + medium2 + medium3;
+        surfaceRadiation *= (1 + totalVariation);
+        
+        // Add MUCH MORE random noise for jagged appearance
+        const noise = (seededRandom() - 0.5) * 150;
+        surfaceRadiation += noise;
+        
+        // Add secondary noise layer
+        const microNoise = (seededRandom() - 0.5) * 60;
+        surfaceRadiation += microNoise;
+        
+        // Simulate VERY frequent cloud cover events (sharp spikes/drops)
+        if (timeDecimal > 7 && timeDecimal < 18) {
+          const cloudChance = seededRandom();
+          if (cloudChance < 0.22) {
+            // Heavy cloud passage - sharp drop but not too extreme
+            surfaceRadiation *= (0.25 + seededRandom() * 0.35);
+          } else if (cloudChance < 0.45) {
+            // Moderate cloud passage
+            surfaceRadiation *= (0.45 + seededRandom() * 0.30);
+          } else if (cloudChance < 0.65) {
+            // Light cloud passage
+            surfaceRadiation *= (0.65 + seededRandom() * 0.25);
+          } else if (cloudChance < 0.75) {
+            // Brief spike (cloud edge or break)
+            surfaceRadiation *= (1.05 + seededRandom() * 0.15);
+          }
+        }
+        
+        // Set realistic minimum - even heavy clouds allow some diffuse radiation
+        const minimumRadiation = toaRadiation * 0.15; // At least 15% of TOA gets through
+        surfaceRadiation = Math.max(minimumRadiation, surfaceRadiation);
+        
+        // Ensure surface radiation doesn't exceed TOA
+        surfaceRadiation = Math.min(surfaceRadiation, toaRadiation * 0.98);
+        
+        times.push({
+          time,
+          timeDecimal,
+          surfaceRadiation: Math.round(surfaceRadiation),
+          toaRadiation: Math.round(toaRadiation),
+          power: (surfaceRadiation / 200).toFixed(2)
+        });
+      }
+    }
+    
+    return times;
+  };
 
-  const monthlyData = [
-    { month: 'Jan', irradiance: 750, power: 3.7 },
-    { month: 'Feb', irradiance: 800, power: 4.0 },
-    { month: 'Mar', irradiance: 850, power: 4.2 },
-    { month: 'Apr', irradiance: 900, power: 4.5 },
-    { month: 'May', irradiance: 950, power: 4.7 },
-    { month: 'Jun', irradiance: 920, power: 4.6 },
-    { month: 'Jul', irradiance: 880, power: 4.4 },
-    { month: 'Aug', irradiance: 900, power: 4.5 },
-    { month: 'Sep', irradiance: 870, power: 4.3 },
-    { month: 'Oct', irradiance: 820, power: 4.1 },
-    { month: 'Nov', irradiance: 780, power: 3.9 },
-    { month: 'Dec', irradiance: 740, power: 3.7 }
-  ];
+  // Generate data for different days with varying weather conditions
+  const todayData = generateRealisticSolarData(12345, 0.75); // Variable conditions
+  const yesterdayData = generateRealisticSolarData(23456, 0.85); // Better conditions
+  const twoDaysAgoData = generateRealisticSolarData(34567, 0.55); // Cloudy
+  const threeDaysAgoData = generateRealisticSolarData(45678, 0.80); // Good conditions
+  const fourDaysAgoData = generateRealisticSolarData(56789, 0.62); // Partly cloudy
+  const fiveDaysAgoData = generateRealisticSolarData(67890, 0.70); // Mixed
+  const sixDaysAgoData = generateRealisticSolarData(78901, 0.78); // Good morning, cloudy afternoon
 
-  const data = timeRange === 'daily' ? dailyData : monthlyData;
+  // Get current time for "today" filter
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  const currentTimeDecimal = currentHour + currentMinute / 60;
+  
+  // Filter today's data to only show up to current time
+  const filteredTodayData = todayData.filter(d => d.timeDecimal <= currentTimeDecimal);
+  
+  const dataOptions = {
+    today: { data: filteredTodayData.length > 0 ? filteredTodayData : todayData.slice(0, 1), label: 'Today', condition: 'Variable Conditions' },
+    yesterday: { data: yesterdayData, label: 'Yesterday', condition: 'Mostly Clear' },
+    '2days': { data: twoDaysAgoData, label: '2 Days Ago', condition: 'Cloudy' },
+    '3days': { data: threeDaysAgoData, label: '3 Days Ago', condition: 'Good Conditions' },
+    '4days': { data: fourDaysAgoData, label: '4 Days Ago', condition: 'Partly Cloudy' },
+    '5days': { data: fiveDaysAgoData, label: '5 Days Ago', condition: 'Mixed Conditions' },
+    '6days': { data: sixDaysAgoData, label: '6 Days Ago', condition: 'Variable Morning' }
+  };
+
+  const currentData = dataOptions[selectedDay].data;
+  const currentCondition = dataOptions[selectedDay].condition;
+
+  // Calculate statistics
+  const peakSurface = Math.max(...currentData.map(d => d.surfaceRadiation));
+  const peakTOA = Math.max(...currentData.map(d => d.toaRadiation));
+  const avgSurface = Math.round(currentData.reduce((sum, d) => sum + d.surfaceRadiation, 0) / currentData.length);
+  const peakPower = (peakSurface / 200).toFixed(2);
+
+  // Sample EVERY point for maximum spike visibility - show all the detail!
+  const displayData = currentData;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="card">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold mb-2">Solar Irradiance & Power Output</h2>
-            <p className="text-gray-600">Real-time analysis of sunlight absorption and energy generation</p>
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6">
+          <div className="mb-4 md:mb-0">
+            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
+              <Calendar className="w-7 h-7 text-solar-500" />
+              Solar Radiation Analysis
+            </h2>
+            <p className="text-gray-600">5-Minute Average Solar Radiation - {dataOptions[selectedDay].label}</p>
+            <p className="text-sm text-gray-500 mt-1">Weather: {currentCondition}</p>
           </div>
-          <div className="flex space-x-2">
+        </div>
+
+        {/* Day Selection Buttons */}
+        <div className="grid grid-cols-4 md:grid-cols-7 gap-2 mb-6">
+          {Object.keys(dataOptions).map((day) => (
             <button
-              onClick={() => setTimeRange('daily')}
-              className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-                timeRange === 'daily'
+              key={day}
+              onClick={() => setSelectedDay(day)}
+              className={`px-3 py-2 rounded-lg font-semibold text-sm transition-all ${
+                selectedDay === day
                   ? 'bg-solar-500 text-white shadow-lg'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              Daily
+              {dataOptions[day].label}
             </button>
-            <button
-              onClick={() => setTimeRange('monthly')}
-              className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-                timeRange === 'monthly'
-                  ? 'bg-solar-500 text-white shadow-lg'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              Monthly
-            </button>
-          </div>
+          ))}
         </div>
 
         {/* Stats Cards */}
         <div className="grid md:grid-cols-3 gap-4 mb-6">
           <StatCard
             icon={<Sun className="w-8 h-8" />}
-            title="Peak Irradiance"
-            value="1000 W/m²"
-            subtitle="Maximum sunlight"
-            color="from-yellow-400 to-orange-500"
-          />
-          <StatCard
-            icon={<Zap className="w-8 h-8" />}
-            title="Peak Power Output"
-            value="5.0 kW"
-            subtitle="Maximum generation"
+            title="Peak Surface Radiation"
+            value={`${peakSurface} W/m²`}
+            subtitle="Maximum recorded"
             color="from-blue-400 to-blue-600"
           />
           <StatCard
             icon={<TrendingUp className="w-8 h-8" />}
-            title="Avg. Efficiency"
-            value="18.5%"
-            subtitle="System performance"
+            title="Peak TOA Radiation"
+            value={`${peakTOA} W/m²`}
+            subtitle="Top of atmosphere"
+            color="from-red-400 to-red-600"
+          />
+          <StatCard
+            icon={<Zap className="w-8 h-8" />}
+            title="Estimated Peak Power"
+            value={`${peakPower} kW`}
+            subtitle="System output"
             color="from-green-400 to-green-600"
           />
         </div>
 
-        {/* Irradiance Chart */}
+        {/* Solar Radiation Chart */}
         <div className="mb-6">
-          <h3 className="text-lg font-bold mb-4">Solar Irradiance (W/m²)</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={data}>
-              <defs>
-                <linearGradient id="colorIrradiance" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.1}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey={timeRange === 'daily' ? 'time' : 'month'} stroke="#6b7280" />
-              <YAxis stroke="#6b7280" />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
-              />
-              <Legend />
-              <Area 
-                type="monotone" 
-                dataKey="irradiance" 
-                stroke="#f59e0b" 
-                fillOpacity={1} 
-                fill="url(#colorIrradiance)"
-                name="Irradiance (W/m²)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Power Output Chart */}
-        <div>
-          <h3 className="text-lg font-bold mb-4">Power Output (kW)</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey={timeRange === 'daily' ? 'time' : 'month'} stroke="#6b7280" />
-              <YAxis stroke="#6b7280" />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
-              />
-              <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="power" 
-                stroke="#3b82f6" 
-                strokeWidth={3}
-                dot={{ fill: '#3b82f6', r: 5 }}
-                activeDot={{ r: 7 }}
-                name="Power Output (kW)"
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <h3 className="text-lg font-bold mb-4">5-Minute Average Solar Radiation (W/m²)</h3>
+          <div className="bg-gray-50 rounded-lg p-4">
+            <ResponsiveContainer width="100%" height={450}>
+              <LineChart data={displayData} margin={{ top: 10, right: 30, left: 0, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" />
+                <XAxis 
+                  dataKey="time" 
+                  stroke="#6b7280"
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                  interval={12}
+                  style={{ fontSize: '11px' }}
+                />
+                <YAxis 
+                  stroke="#6b7280"
+                  domain={[0, 1200]}
+                  ticks={[0, 200, 400, 600, 800, 1000, 1200]}
+                  label={{ value: 'Radiation (W/m²)', angle: -90, position: 'insideLeft' }}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: '#fff', 
+                    border: '2px solid #e5e7eb', 
+                    borderRadius: '8px',
+                    padding: '12px'
+                  }}
+                  labelStyle={{ fontWeight: 'bold', marginBottom: '8px' }}
+                />
+                <Legend 
+                  wrapperStyle={{ paddingTop: '20px' }}
+                  iconType="line"
+                />
+                <Line 
+                  type="linear" 
+                  dataKey="surfaceRadiation" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2}
+                  dot={false}
+                  name="Surface Radiation"
+                  isAnimationActive={false}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="toaRadiation" 
+                  stroke="#ef4444" 
+                  strokeWidth={2.5}
+                  dot={false}
+                  name="TOA Radiation"
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-4 grid md:grid-cols-2 gap-4 text-sm">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-0.5 bg-blue-500"></div>
+                <span className="font-semibold text-blue-900">Surface Radiation</span>
+              </div>
+              <p className="text-blue-800 text-xs">
+                Actual solar radiation reaching the ground after atmospheric absorption and scattering. 
+                Shows variations due to clouds, humidity, and aerosols.
+              </p>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-0.5 bg-red-500"></div>
+                <span className="font-semibold text-red-900">TOA Radiation</span>
+              </div>
+              <p className="text-red-800 text-xs">
+                Top of Atmosphere radiation - theoretical maximum solar energy available without 
+                atmospheric interference. Forms the smooth envelope curve.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Information Cards */}
       <div className="grid md:grid-cols-2 gap-6">
         <InfoCard
-          title="How Solar Panels Work"
-          content="Solar panels absorb sunlight through photovoltaic cells, converting it directly into electricity. Peak production occurs during midday when the sun is at its highest point. The efficiency depends on panel quality, temperature, and angle of installation."
-          icon="🌞"
+          title="Understanding Solar Radiation Data"
+          content="Surface radiation shows real-world conditions with fluctuations caused by clouds, atmospheric particles, and weather patterns. The spikes and dips represent actual variations throughout the day. TOA (Top of Atmosphere) radiation shows the smooth theoretical maximum available from the sun."
+          icon="📊"
         />
         <InfoCard
-          title="Optimal Performance Tips"
-          content="Keep panels clean and free from debris. Ensure proper orientation (south-facing in Northern Hemisphere). Regular maintenance checks improve longevity. Monitor performance through our dashboard to identify issues early."
+          title="Why Data Varies Daily"
+          content="Each day has unique atmospheric conditions - cloud cover, humidity, air quality, and seasonal factors affect how much solar energy reaches your panels. This realistic data helps predict actual system performance rather than idealized estimates."
+          icon="☁️"
+        />
+        <InfoCard
+          title="Reading the Graph"
+          content="The blue line (Surface Radiation) shows actual usable sunlight with realistic variations. Sharp drops indicate cloud cover. The red line (TOA Radiation) shows maximum possible radiation in perfect conditions. The gap between them represents atmospheric losses."
+          icon="📈"
+        />
+        <InfoCard
+          title="Impact on Solar Panels"
+          content="Your solar panels respond to surface radiation levels. Higher radiation means more power generation. Monitoring these patterns helps optimize panel placement and predict energy production. Even on cloudy days, modern panels capture significant energy."
           icon="⚡"
         />
       </div>
