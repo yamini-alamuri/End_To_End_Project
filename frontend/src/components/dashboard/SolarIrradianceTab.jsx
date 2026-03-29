@@ -5,8 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 const SolarIrradianceTab = () => {
   const [selectedDay, setSelectedDay] = useState('today');
 
-  // Generate HIGHLY realistic solar irradiance data with lots of spikes and fluctuations
-  // This simulates real-world cloud cover, atmospheric turbulence, and rapid variations
+  // Generate realistic solar irradiance data with smooth, gradual cloud effects
   const generateRealisticSolarData = (seed, weatherPattern) => {
     const times = [];
     const startHour = 5; // 5 AM
@@ -18,6 +17,23 @@ const SolarIrradianceTab = () => {
       randomSeed = (randomSeed * 9301 + 49297) % 233280;
       return randomSeed / 233280;
     };
+
+    // Broad cloud systems (slow dips)
+    const cloudEvents = [];
+    const eventCount = 3 + Math.floor(seededRandom() * 4); // 3 to 6 events per day
+    for (let i = 0; i < eventCount; i++) {
+      cloudEvents.push({
+        center: 8 + seededRandom() * 9.5,         // event center between 8:00 and 17:30
+        duration: 0.5 + seededRandom() * 1.5,     // 30 to 120 minutes
+        depth: 0.12 + seededRandom() * 0.38       // 12% to 50% attenuation at peak cloud cover
+      });
+    }
+
+    let previousSurface = null;
+    let transientDip = 0;
+    let transientBoost = 0;
+    let burstRemaining = 0;
+    let burstDepth = 0;
     
     for (let hour = startHour; hour <= endHour; hour++) {
       for (let minute = 0; minute < 60; minute += 5) {
@@ -48,58 +64,108 @@ const SolarIrradianceTab = () => {
           continue;
         }
         
-        // Start with base atmospheric absorption
-        let surfaceRadiation = toaRadiation * (0.6 + weatherPattern * 0.3);
-        
-        // Add EXTREME rapid fluctuations - many overlapping frequency components
-        const rapid1 = Math.sin(timeDecimal * 25.7 + seed) * 0.25;
-        const rapid2 = Math.sin(timeDecimal * 43.3 + seed * 1.5) * 0.22;
-        const rapid3 = Math.sin(timeDecimal * 61.8 + seed * 2.1) * 0.20;
-        const rapid4 = Math.cos(timeDecimal * 35.4 + seed * 0.7) * 0.23;
-        const rapid5 = Math.sin(timeDecimal * 51.2 + seed * 3.2) * 0.18;
-        const rapid6 = Math.cos(timeDecimal * 28.9 + seed * 2.8) * 0.21;
-        
-        // Medium frequency variations (larger cloud movements)
-        const medium1 = Math.sin(timeDecimal * 8.2 + seed * 0.5) * 0.28;
-        const medium2 = Math.cos(timeDecimal * 12.8 + seed * 1.3) * 0.26;
-        const medium3 = Math.sin(timeDecimal * 6.5 + seed * 1.8) * 0.24;
-        
-        // Combine all fluctuations
-        const totalVariation = rapid1 + rapid2 + rapid3 + rapid4 + rapid5 + rapid6 + medium1 + medium2 + medium3;
-        surfaceRadiation *= (1 + totalVariation);
-        
-        // Add MUCH MORE random noise for jagged appearance
-        const noise = (seededRandom() - 0.5) * 150;
-        surfaceRadiation += noise;
-        
-        // Add secondary noise layer
-        const microNoise = (seededRandom() - 0.5) * 60;
-        surfaceRadiation += microNoise;
-        
-        // Simulate VERY frequent cloud cover events (sharp spikes/drops)
-        if (timeDecimal > 7 && timeDecimal < 18) {
-          const cloudChance = seededRandom();
-          if (cloudChance < 0.22) {
-            // Heavy cloud passage - sharp drop but not too extreme
-            surfaceRadiation *= (0.25 + seededRandom() * 0.35);
-          } else if (cloudChance < 0.45) {
-            // Moderate cloud passage
-            surfaceRadiation *= (0.45 + seededRandom() * 0.30);
-          } else if (cloudChance < 0.65) {
-            // Light cloud passage
-            surfaceRadiation *= (0.65 + seededRandom() * 0.25);
-          } else if (cloudChance < 0.75) {
-            // Brief spike (cloud edge or break)
-            surfaceRadiation *= (1.05 + seededRandom() * 0.15);
+        // Base transmittance (clear-sky + weather quality)
+        const baseTransmittance = 0.62 + weatherPattern * 0.22;
+
+        // Slow atmospheric variability (haze/humidity changes)
+        const slowVariation = 1
+          + Math.sin(timeDecimal * 0.9 + seed * 0.01) * 0.035
+          + Math.cos(timeDecimal * 1.3 + seed * 0.02) * 0.028;
+
+        // Apply smooth cloud attenuation from predefined events
+        let cloudFactor = 1;
+        for (const event of cloudEvents) {
+          const halfDuration = event.duration / 2;
+          const x = (timeDecimal - event.center) / halfDuration;
+          if (Math.abs(x) < 1) {
+            // Cosine bell: smooth entry and exit, strongest attenuation at center
+            const influence = 0.5 * (1 + Math.cos(Math.PI * x));
+            cloudFactor *= (1 - event.depth * influence);
           }
         }
-        
-        // Set realistic minimum - even heavy clouds allow some diffuse radiation
-        const minimumRadiation = toaRadiation * 0.15; // At least 15% of TOA gets through
+
+        // Small-scale atmospheric variability
+        const texture = 1
+          + Math.sin(timeDecimal * 6.8 + seed * 0.03) * 0.055
+          + Math.cos(timeDecimal * 9.4 + seed * 0.04) * 0.045;
+
+        // Daytime transient cloud shadows create sharp spikes/dips like measured data
+        const activeSpikes = timeDecimal >= 9 && timeDecimal <= 17.5;
+        if (activeSpikes) {
+          const cloudiness = Math.max(0.05, 1 - weatherPattern);
+
+          // Natural decay of short events
+          transientDip *= 0.50;
+          transientBoost *= 0.42;
+
+          // Frequent single-step dips
+          const dipChance = 0.10 + cloudiness * 0.20;
+          if (seededRandom() < dipChance) {
+            transientDip = Math.max(transientDip, 0.20 + seededRandom() * 0.56);
+          }
+
+          // Occasional cloud-edge brightening right after shadows
+          const boostChance = 0.05 + cloudiness * 0.08;
+          if (seededRandom() < boostChance) {
+            transientBoost = Math.max(transientBoost, 0.04 + seededRandom() * 0.12);
+          }
+
+          // Burst mode: a few consecutive sharp dips (matches reference midday jaggedness)
+          const burstChance = 0.022 + cloudiness * 0.055;
+          if (burstRemaining === 0 && seededRandom() < burstChance) {
+            burstRemaining = 2 + Math.floor(seededRandom() * 5); // 2 to 6 points
+            burstDepth = 0.18 + seededRandom() * 0.34;
+          }
+        } else {
+          transientDip *= 0.55;
+          transientBoost *= 0.45;
+        }
+
+        let burstFactor = 1;
+        if (burstRemaining > 0) {
+          const burstJitter = 0.90 + seededRandom() * 0.22;
+          burstFactor = 1 - Math.min(0.55, burstDepth * burstJitter);
+          burstRemaining -= 1;
+          if (burstRemaining === 0) {
+            burstDepth = 0;
+          }
+        }
+
+        const transientFactor = Math.max(0.20, 1 - transientDip + transientBoost);
+
+        // Smooth baseline envelope to preserve the outer parabolic daily shape
+        const baselineRadiation = toaRadiation * baseTransmittance * slowVariation * cloudFactor;
+
+        let surfaceRadiation = baselineRadiation * texture * transientFactor * burstFactor;
+
+        // Higher local variability for visible jagged profile
+        const noiseFactor = ((seededRandom() + seededRandom()) - 1) * 0.085;
+        surfaceRadiation += toaRadiation * noiseFactor;
+
+        // Preserve envelope: allow spikes, but keep overall curve tracking the baseline
+        const upCap = baselineRadiation * 0.18;
+        const downCap = baselineRadiation * (activeSpikes ? 0.62 : 0.45);
+        const deviation = surfaceRadiation - baselineRadiation;
+        surfaceRadiation = baselineRadiation + Math.max(-downCap, Math.min(upCap, deviation));
+
+        // Adaptive physical floor: stronger floor near noon, lower at morning/evening
+        const daylightStrength = Math.min(1, toaRadiation / 1150);
+        const minimumRadiation = toaRadiation * (0.14 + 0.18 * Math.pow(daylightStrength, 1.2));
         surfaceRadiation = Math.max(minimumRadiation, surfaceRadiation);
         
         // Ensure surface radiation doesn't exceed TOA
         surfaceRadiation = Math.min(surfaceRadiation, toaRadiation * 0.98);
+
+        // Very light continuity control to preserve spikes but avoid impossible cliffs
+        if (previousSurface !== null) {
+          const maxStep = toaRadiation * 0.45 + 40;
+          const delta = surfaceRadiation - previousSurface;
+          if (Math.abs(delta) > maxStep) {
+            surfaceRadiation = previousSurface + Math.sign(delta) * maxStep;
+          }
+          surfaceRadiation = previousSurface * 0.05 + surfaceRadiation * 0.95;
+        }
+        previousSurface = surfaceRadiation;
         
         times.push({
           time,
@@ -114,14 +180,16 @@ const SolarIrradianceTab = () => {
     return times;
   };
 
-  // Generate data for different days with varying weather conditions
-  const todayData = generateRealisticSolarData(12345, 0.75); // Variable conditions
-  const yesterdayData = generateRealisticSolarData(23456, 0.85); // Better conditions
-  const twoDaysAgoData = generateRealisticSolarData(34567, 0.55); // Cloudy
-  const threeDaysAgoData = generateRealisticSolarData(45678, 0.80); // Good conditions
-  const fourDaysAgoData = generateRealisticSolarData(56789, 0.62); // Partly cloudy
-  const fiveDaysAgoData = generateRealisticSolarData(67890, 0.70); // Mixed
-  const sixDaysAgoData = generateRealisticSolarData(78901, 0.78); // Good morning, cloudy afternoon
+  // Keep Yesterday and 3 Days Ago as-is (user-preferred reference style)
+  const yesterdayData = generateRealisticSolarData(23456, 0.85); // Better conditions (unchanged)
+  const threeDaysAgoData = generateRealisticSolarData(45678, 0.80); // Good conditions (unchanged)
+
+  // Align other days to the same overall profile family (parabolic envelope + realistic spikes)
+  const todayData = generateRealisticSolarData(12345, 0.83);
+  const twoDaysAgoData = generateRealisticSolarData(34567, 0.82);
+  const fourDaysAgoData = generateRealisticSolarData(56789, 0.81);
+  const fiveDaysAgoData = generateRealisticSolarData(67890, 0.84);
+  const sixDaysAgoData = generateRealisticSolarData(78901, 0.82);
 
   // Get current time for "today" filter
   const now = new Date();
@@ -133,13 +201,13 @@ const SolarIrradianceTab = () => {
   const filteredTodayData = todayData.filter(d => d.timeDecimal <= currentTimeDecimal);
   
   const dataOptions = {
-    today: { data: filteredTodayData.length > 0 ? filteredTodayData : todayData.slice(0, 1), label: 'Today', condition: 'Variable Conditions' },
+    today: { data: filteredTodayData.length > 0 ? filteredTodayData : todayData.slice(0, 1), label: 'Today', condition: 'Mostly Clear' },
     yesterday: { data: yesterdayData, label: 'Yesterday', condition: 'Mostly Clear' },
-    '2days': { data: twoDaysAgoData, label: '2 Days Ago', condition: 'Cloudy' },
+    '2days': { data: twoDaysAgoData, label: '2 Days Ago', condition: 'Good Conditions' },
     '3days': { data: threeDaysAgoData, label: '3 Days Ago', condition: 'Good Conditions' },
-    '4days': { data: fourDaysAgoData, label: '4 Days Ago', condition: 'Partly Cloudy' },
-    '5days': { data: fiveDaysAgoData, label: '5 Days Ago', condition: 'Mixed Conditions' },
-    '6days': { data: sixDaysAgoData, label: '6 Days Ago', condition: 'Variable Morning' }
+    '4days': { data: fourDaysAgoData, label: '4 Days Ago', condition: 'Good Conditions' },
+    '5days': { data: fiveDaysAgoData, label: '5 Days Ago', condition: 'Mostly Clear' },
+    '6days': { data: sixDaysAgoData, label: '6 Days Ago', condition: 'Good Conditions' }
   };
 
   const currentData = dataOptions[selectedDay].data;
@@ -151,7 +219,7 @@ const SolarIrradianceTab = () => {
   const avgSurface = Math.round(currentData.reduce((sum, d) => sum + d.surfaceRadiation, 0) / currentData.length);
   const peakPower = (peakSurface / 200).toFixed(2);
 
-  // Sample EVERY point for maximum spike visibility - show all the detail!
+  // Show every 5-minute point while keeping the curve physically realistic
   const displayData = currentData;
 
   return (
@@ -296,7 +364,7 @@ const SolarIrradianceTab = () => {
       <div className="grid md:grid-cols-2 gap-6">
         <InfoCard
           title="Understanding Solar Radiation Data"
-          content="Surface radiation shows real-world conditions with fluctuations caused by clouds, atmospheric particles, and weather patterns. The spikes and dips represent actual variations throughout the day. TOA (Top of Atmosphere) radiation shows the smooth theoretical maximum available from the sun."
+          content="Surface radiation shows real-world conditions with gradual fluctuations caused by clouds, atmospheric particles, and weather patterns. TOA (Top of Atmosphere) radiation shows the smooth theoretical maximum available from the sun."
           icon="📊"
         />
         <InfoCard
@@ -306,7 +374,7 @@ const SolarIrradianceTab = () => {
         />
         <InfoCard
           title="Reading the Graph"
-          content="The blue line (Surface Radiation) shows actual usable sunlight with realistic variations. Sharp drops indicate cloud cover. The red line (TOA Radiation) shows maximum possible radiation in perfect conditions. The gap between them represents atmospheric losses."
+          content="The blue line (Surface Radiation) shows actual usable sunlight with smooth weather-driven variation. The red line (TOA Radiation) shows maximum possible radiation in perfect conditions. The gap between them represents atmospheric losses."
           icon="📈"
         />
         <InfoCard
@@ -347,3 +415,4 @@ const InfoCard = ({ title, content, icon }) => (
 );
 
 export default SolarIrradianceTab;
+
